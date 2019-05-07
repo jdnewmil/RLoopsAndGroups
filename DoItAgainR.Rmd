@@ -1,0 +1,223 @@
+---
+title: "Do It Again, R!"
+author: "Jeff Newmiller"
+date: "7 May 2019"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo = TRUE )
+```
+
+## Outline
+
+- For Loops
+    + Where is my output?
+    + Keeping results
+- Vectors of inputs and vectors of outputs
+    + Vectorized functions, not "Vectorize my function"
+    + Appending columns
+    + Plotting results: ggplot2
+- Expanding options
+    + Cartesian join: expand.grid
+- Compressing options: Subset, subset, subset... Grouping!
+  + Truncation
+  + "cut"-ing
+  + switch
+  + forcats
+- "ave" and "aggregate"... or "group_by/mutate" and "group_by/summarise"
+- Lists
+
+## Packages Used
+
+```{r loadpackages,echo=FALSE,warning=FALSE}
+suppressPackageStartupMessages( library( dplyr ) )
+suppressPackageStartupMessages( library( ggplot2 ) )
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+
+## Sample Problem
+
+Given a relationship between $x$ and $y$:
+
+$$
+y = a x^2 + b x + c
+$$
+
+we can find which values of $x$ cause $y=0$ using the quadratic formula:
+
+$$
+x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}
+$$
+
+## Sample Solution
+
+For now, we will focus on the most positive answer:
+
+```{r quad1}
+A <- 1
+B <- -2
+C <- -3
+DF1 <- tibble( x = seq( -3, 5, 0.1 )
+             , y = A*x^2 + B*x + C
+             )
+DF1b <- tibble( x = 3, y = 0 )
+ans <- ( -B + sqrt( B^2 - 4*A*C ) ) / ( 2 * A )
+ans
+```
+
+## Solution Plot
+
+```{r,echo=FALSE}
+ggplot( DF1, aes( x = x, y = y ) ) +
+  geom_line() +
+  geom_point( data = DF1b, size = 2, colour = "blue" ) +
+  theme_minimal()
+```
+
+
+## Do it more than once?
+
+```{r readmyabc}
+input <- read.csv( "data/MyABC1.csv" )
+input
+```
+
+
+## For Loop - Printing
+
+A common approach used in other languages is to print results as you go along:
+
+```{r forprint, echo = TRUE}
+for ( i in seq_along( input$A ) ) {
+    A <- input$A[ i ]
+    B <- input$B[ i ]
+    C <- input$C[ i ]
+    print( sprintf( "A = %8.4f, B = %8.4f, C = %8.4f, x = %8.4f"
+                  , A, B, C
+                  , ( -B + sqrt( B^2 - 4*A*C ) )
+                    / ( 2 * A ) ) )
+}
+```
+
+## For Loop - Concatenating
+
+Another common recommendation is to concatenate:
+
+```{r forconcat}
+ans <- numeric( 0 )
+for ( i in seq_along( input$A ) ) {
+    A <- input$A[ i ]
+    B <- input$B[ i ]
+    C <- input$C[ i ]
+    ans <- c( ans, ( -B + sqrt( B^2 - 4*A*C ) ) / ( 2 * A ) )
+}
+ans
+```
+
+## For Loop - Element Replacement
+
+Concatenating can be _very_ inefficient if there are many elements of `ans` because there are $n-1$ shorter versions of `ans` created and discarded along the way.
+
+```{r formodify}
+ans <- numeric( nrow( input ) )
+ans
+for ( i in seq_along( input$A ) ) {
+    A <- input$A[ i ] ; B <- input$B[ i ] ; C <- input$C[ i ]
+    ans[ i ] <- ( -B + sqrt( B^2 - 4*A*C ) ) / ( 2 * A )
+}
+ans
+```
+
+## Combined Presentation
+
+Having your results in a vector of their own is useful, but showing that vector next to the inputs is even more useful:
+
+```{r}
+cbind( input, tibble( ans = ans ) )
+```
+
+## Make a Solution Function
+
+To make a function, write code that uses inputs mentioned in the parentheses, and the last expression in the function will be the answer given by the function:
+
+```{r}
+my_solution <- function( A, B, C ) {
+  ( -B + sqrt( B^2 - 4*A*C ) ) / ( 2 * A )
+}
+my_solution( 1, -2, -3 ) # try it out
+```
+
+You can also draw on variables from the working environment where you define the function, but it is intentionally hard to make changes to such variables inside a function.
+
+## Make a Many Solutions Function
+
+If your solutions generally only worked for one value each for `A`, `B`, and `C` then you might make this function:
+
+```{r}
+my_many_solutions <- function( A, B, C, solution ) {
+  ans <- numeric( length( A ) )
+  for ( i in seq_along( A ) ) {
+    ans[ i ] <- solution( A[ i ], B[ i ], C[ i ] )
+  }
+  ans
+}
+my_many_solutions( input$A, input$B, input$C, my_solution )
+```
+
+## But why Re-Invent the Wheel?
+
+The `pmap_dbl` function takes a data frame and applies a function to each row. The function arguments have to be the same as the column names in the data frame, so we exclude the `Trial` column before giving it to `pmap_dbl`:
+
+```{r}
+library(purrr)
+pmap_dbl( input[ , -1 ], my_solution )
+```
+
+## Vectorized Calculations
+
+In this case, because R arithmetic operations are internally vectorized, the `my_solution` function can directly be given vectors instead of one value at a time, which is much faster:
+
+```{r}
+my_solution( input$A, input$B, input$C )
+```
+
+## Why Not Always Vectorize?
+
+Some algorithms are hard to implement in vectorized fashion... you may reach your goal sooner if you use a slower but simpler algorithm that is imperfect but gets the job done: 
+
+```{r}
+my_slow_solution <- function( A, B, C ) {
+  Y <- function( X, A, B, C ) { A * X^2 + B * X + C }
+  # only one answer at a time
+  uniroot( Y, c( 0, 1e6 ), A = A, B = B, C = C, tol = 1e-8 )$root
+}
+my_slow_solution( 1, -2, -3 )
+```
+
+but if you plan to solve many thousands or millions of problems, it may pay off to spend time making a complex algorithm vectorized. 
+
+## Speed Review
+
+The price of flexibility when using `pmap_dbl` is speed.
+
+```{r}
+library(microbenchmark)
+ans <- microbenchmark( 
+  my_many_slow = my_many_solutions( input$A, input$B, input$C, my_slow_solution )
+, pmap_slow = pmap_dbl( input[ , -1 ], my_slow_solution )
+, loop_single = my_many_solutions( input$A, input$B, input$C, my_solution )
+, pmap_single = pmap_dbl( input[ , -1 ], my_solution )
+, vectorized = my_solution( input$A, input$B, input$C )
+)
+knitr::kable( summary( ans ) )
+```
+
+
+

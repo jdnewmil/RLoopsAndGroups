@@ -22,19 +22,16 @@ knitr::opts_chunk$set( echo = TRUE )
 - For Loops
     + Where is my output?
     + Keeping results
-- Vectors of inputs and vectors of outputs
+- Vectors of inputs and vectors of outputs<sup>1</sup>
     + Vectorized functions, not "Vectorize my function"
     + Appending columns
     + Plotting results: ggplot2
 - Expanding options
     + Cartesian join: expand.grid
-- Compressing options: Subset, subset, subset... Grouping!
-  + Truncation
-  + "cut"-ing
-  + switch
-  + forcats
-- "ave" and "aggregate"... or "group_by/mutate" and "group_by/summarise"
-- Lists
+
+.footnote[
+[1] Inspired by _R for Data Science_ (https://r4ds.had.co.nz)
+]
 
 ---
 
@@ -43,12 +40,18 @@ knitr::opts_chunk$set( echo = TRUE )
 ```{r loadpackages,echo=FALSE,warning=FALSE}
 suppressPackageStartupMessages( library( dplyr ) )
 suppressPackageStartupMessages( library( ggplot2 ) )
+suppressPackageStartupMessages( library( purrr ) )
+suppressPackageStartupMessages( library( microbenchmark ) )
+suppressPackageStartupMessages( library( tidyr ) )
 ```
 
 
 ```{r}
-library(dplyr)
-library(ggplot2)
+library(dplyr)          # tidyverse
+library(ggplot2)        # tidyverse
+library(purrr)          # tidyverse
+library(microbenchmark) # speed check
+library(tidyr)          # tidyverse
 ```
 
 ---
@@ -74,14 +77,12 @@ $$
 For now, we will focus on the most positive answer:
 
 ```{r quad1}
-A <- 1
-B <- -2
-C <- -3
+A <- 1 ; B <- -2 ; C <- -3
 DF1 <- tibble( x = seq( -3, 5, 0.1 )
-             , y = A*x^2 + B*x + C
-             )
-DF1b <- tibble( x = 3, y = 0 )
+             , y = A*x^2 + B*x + C )
+head( DF1, 4 )
 ans <- ( -B + sqrt( B^2 - 4*A*C ) ) / ( 2 * A )
+DF1b <- tibble( x = ans, y = 0 )
 ans
 ```
 
@@ -142,11 +143,13 @@ for ( i in seq_along( input$A ) ) {
 ans
 ```
 
+Concatenating can be _very_ inefficient if there are many elements of `ans` because there are $n-1$ shorter versions of `ans` created and discarded along the way.
+
 ---
 
 # For Loop - Element Replacement
 
-Concatenating can be _very_ inefficient if there are many elements of `ans` because there are $n-1$ shorter versions of `ans` created and discarded along the way.
+Allocating a vector large enough to hold all the answers and then replacing one element at a time is noticeably faster.
 
 ```{r formodify}
 ans <- numeric( nrow( input ) )
@@ -245,7 +248,7 @@ but if you plan to solve many thousands or millions of problems, it may pay off 
 The price of flexibility when using `pmap_dbl` is speed.
 
 ```{r}
-options( digits = 1 )
+options( digits = 1 ) # compact results
 library(microbenchmark)
 ans <- microbenchmark( 
   loop_slow = my_many_solutions( input$A, input$B, input$C
@@ -266,13 +269,14 @@ summary( ans )
 What if you want to try out a bunch of possible input combinations without listing all of them in a file? `expand.grid` to the rescue!
 
 ```{r}
-Bvals <- seq( -2, 0, 0.1 )
-Cvals <- seq( -4, -2, 0.5 )
-DF2 <- expand.grid( A = 1
+options( digits = 3 )
+Bvals <- seq( -2, 0, 0.1 )   # 21 values
+Cvals <- seq( -4, -2, 0.5 )  # 5 values
+DF2 <- expand.grid( A = 1    # all combinations A/B/C
                   , B = Bvals
                   , C = Cvals
                   )
-nrow( DF2 )
+nrow( DF2 ) # 1 * 5 * 21
 head( DF2 )
 ```
 
@@ -283,11 +287,11 @@ head( DF2 )
 With so many ways to compute a vector of answers given an input data frame, we can choose the one most appropriate:
 
 ```{r}
-DF2$ans <- with( DF2, my_solution( A, B, C ) )
+DF2$ans <- my_solution( DF2$A, DF2$B, DF2$C ) # 105 answers at once!
 head( DF2 )
 ```
 
-Each row now has an answer associated with it. How to present?
+Each row now has an answer associated with it. How should we present these results?
 
 ---
 
@@ -296,7 +300,9 @@ Each row now has an answer associated with it. How to present?
 One way is to treat each separate value of `C` distinctly, but plot `ans` vs. `B`. The usual way to mark a group of rows is to give them all the same value of a factor:
 
 ```{r}
-DF2$Cgroup <- factor( DF2$C, levels = Cvals )
+DF2$Cgroup <- factor( DF2$C # there are 105 elements...
+                    , levels = Cvals # but only 5 discrete values
+                    )
 head( DF2 )
 ```
 
@@ -304,7 +310,7 @@ head( DF2 )
 
 # Use `ggplot2` Color
 
-Ggplot will separate the data into groups of records where the `Cgroup` column values are all the same. Note that because `C` is numeric, `ggplot` would assume there could be values like 3.7 even though we purposely skipped over that value. 
+Ggplot will separate the data into groups of records where the `Cgroup` column values are all the same. Note that because `C` is numeric, `ggplot` would assume if we used `C` for color there could be values like 3.7 even though we purposely skipped over that value. 
 
 ```{r,fig.height=3}
 library(ggplot2)
@@ -324,8 +330,8 @@ Sometimes others don't want a "long"-form data frame... the `spread` function is
 library(tidyr)
 options( digits = 3 )
 DF3 <- (   DF2
-       %>% select( A, B, C = Cgroup, ans )
-       %>% spread( C, ans )
+       %>% select( A, B, Cgroup, ans )
+       %>% spread( Cgroup, ans )
        )
 head( DF3 )
 ```
@@ -340,7 +346,12 @@ The factor version of `C` is discrete, which makes it easier to know which `ans`
     + Most useful for repeating `solution`s that involve a lot of calculations anyway
     + `apply`-type functions are just wrappers for `for` loops with results pre-allocation
 - Vectorized code uses all vector-based primitive operations
-    + `apply`-type code _looks_ vectorized so easy to read, but not fast
+    + `apply`-type code _looks_ vectorized so easy to read, but not as fast
     + See `?Arithmetic`, and `?cumsum`, and `?rowSums` for example
 - Grouping rows by discrete values helps you sort out your results
     + Numeric values are not discrete, but you can fake it by making a factor
+- Do check out R4DS (https://r4ds.had.co.nz) for more useful analysis strategies
+
+.footnote[
+[1] HTML slides built with the `xaringan` package, available via `install.packages`.
+]

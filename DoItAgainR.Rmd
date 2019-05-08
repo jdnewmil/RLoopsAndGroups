@@ -1,15 +1,23 @@
 ---
 title: "Do It Again, R!"
+subtitle: "Intro to Loops, Functions and Groups"
 author: "Jeff Newmiller"
 date: "7 May 2019"
-output: ioslides_presentation
+output: 
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
 ---
 
 ```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
 knitr::opts_chunk$set( echo = TRUE )
 ```
 
-## Outline
+# Outline
 
 - For Loops
     + Where is my output?
@@ -28,7 +36,9 @@ knitr::opts_chunk$set( echo = TRUE )
 - "ave" and "aggregate"... or "group_by/mutate" and "group_by/summarise"
 - Lists
 
-## Packages Used
+---
+
+# Packages Used
 
 ```{r loadpackages,echo=FALSE,warning=FALSE}
 suppressPackageStartupMessages( library( dplyr ) )
@@ -41,6 +51,7 @@ library(dplyr)
 library(ggplot2)
 ```
 
+---
 
 ## Sample Problem
 
@@ -56,7 +67,9 @@ $$
 x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}
 $$
 
-## Sample Solution
+---
+
+# Sample Solution
 
 For now, we will focus on the most positive answer:
 
@@ -72,7 +85,9 @@ ans <- ( -B + sqrt( B^2 - 4*A*C ) ) / ( 2 * A )
 ans
 ```
 
-## Solution Plot
+---
+
+# Solution Plot
 
 ```{r,echo=FALSE}
 ggplot( DF1, aes( x = x, y = y ) ) +
@@ -82,7 +97,9 @@ ggplot( DF1, aes( x = x, y = y ) ) +
 ```
 
 
-## Do it more than once?
+---
+
+# Do it more than once?
 
 ```{r readmyabc}
 input <- read.csv( "data/MyABC1.csv" )
@@ -90,7 +107,9 @@ input
 ```
 
 
-## For Loop - Printing
+---
+
+# For Loop - Printing
 
 A common approach used in other languages is to print results as you go along:
 
@@ -106,7 +125,9 @@ for ( i in seq_along( input$A ) ) {
 }
 ```
 
-## For Loop - Concatenating
+---
+
+# For Loop - Concatenating
 
 Another common recommendation is to concatenate:
 
@@ -121,7 +142,9 @@ for ( i in seq_along( input$A ) ) {
 ans
 ```
 
-## For Loop - Element Replacement
+---
+
+# For Loop - Element Replacement
 
 Concatenating can be _very_ inefficient if there are many elements of `ans` because there are $n-1$ shorter versions of `ans` created and discarded along the way.
 
@@ -135,7 +158,9 @@ for ( i in seq_along( input$A ) ) {
 ans
 ```
 
-## Combined Presentation
+---
+
+# Combined Presentation
 
 Having your results in a vector of their own is useful, but showing that vector next to the inputs is even more useful:
 
@@ -143,7 +168,9 @@ Having your results in a vector of their own is useful, but showing that vector 
 cbind( input, tibble( ans = ans ) )
 ```
 
-## Make a Solution Function
+---
+
+# Make a Solution Function
 
 To make a function, write code that uses inputs mentioned in the parentheses, and the last expression in the function will be the answer given by the function:
 
@@ -156,7 +183,9 @@ my_solution( 1, -2, -3 ) # try it out
 
 You can also draw on variables from the working environment where you define the function, but it is intentionally hard to make changes to such variables inside a function.
 
-## Make a Many Solutions Function
+---
+
+# Make a Many Solutions Function
 
 If your solutions generally only worked for one value each for `A`, `B`, and `C` then you might make this function:
 
@@ -171,7 +200,9 @@ my_many_solutions <- function( A, B, C, solution ) {
 my_many_solutions( input$A, input$B, input$C, my_solution )
 ```
 
-## But why Re-Invent the Wheel?
+---
+
+# But why Re-Invent the Wheel?
 
 The `pmap_dbl` function takes a data frame and applies a function to each row. The function arguments have to be the same as the column names in the data frame, so we exclude the `Trial` column before giving it to `pmap_dbl`:
 
@@ -180,7 +211,9 @@ library(purrr)
 pmap_dbl( input[ , -1 ], my_solution )
 ```
 
-## Vectorized Calculations
+---
+
+# Vectorized Calculations
 
 In this case, because R arithmetic operations are internally vectorized, the `my_solution` function can directly be given vectors instead of one value at a time, which is much faster:
 
@@ -188,7 +221,9 @@ In this case, because R arithmetic operations are internally vectorized, the `my
 my_solution( input$A, input$B, input$C )
 ```
 
-## Why Not Always Vectorize?
+---
+
+# Why Not Always Vectorize?
 
 Some algorithms are hard to implement in vectorized fashion... you may reach your goal sooner if you use a slower but simpler algorithm that is imperfect but gets the job done: 
 
@@ -203,21 +238,109 @@ my_slow_solution( 1, -2, -3 )
 
 but if you plan to solve many thousands or millions of problems, it may pay off to spend time making a complex algorithm vectorized. 
 
-## Speed Review
+---
+
+# Speed Review
 
 The price of flexibility when using `pmap_dbl` is speed.
 
 ```{r}
+options( digits = 1 )
 library(microbenchmark)
 ans <- microbenchmark( 
-  my_many_slow = my_many_solutions( input$A, input$B, input$C, my_slow_solution )
+  loop_slow = my_many_solutions( input$A, input$B, input$C
+                               , my_slow_solution )
 , pmap_slow = pmap_dbl( input[ , -1 ], my_slow_solution )
-, loop_single = my_many_solutions( input$A, input$B, input$C, my_solution )
+, loop_single = my_many_solutions( input$A, input$B, input$C
+                                 , my_solution )
 , pmap_single = pmap_dbl( input[ , -1 ], my_solution )
 , vectorized = my_solution( input$A, input$B, input$C )
 )
-knitr::kable( summary( ans ) )
+summary( ans )
 ```
 
+---
 
+# Expanding Options
 
+What if you want to try out a bunch of possible input combinations without listing all of them in a file? `expand.grid` to the rescue!
+
+```{r}
+Bvals <- seq( -2, 0, 0.1 )
+Cvals <- seq( -4, -2, 0.5 )
+DF2 <- expand.grid( A = 1
+                  , B = Bvals
+                  , C = Cvals
+                  )
+nrow( DF2 )
+head( DF2 )
+```
+
+---
+
+# Computing on Combinations
+
+With so many ways to compute a vector of answers given an input data frame, we can choose the one most appropriate:
+
+```{r}
+DF2$ans <- with( DF2, my_solution( A, B, C ) )
+head( DF2 )
+```
+
+Each row now has an answer associated with it. How to present?
+
+---
+
+# Grouping Rows
+
+One way is to treat each separate value of `C` distinctly, but plot `ans` vs. `B`. The usual way to mark a group of rows is to give them all the same value of a factor:
+
+```{r}
+DF2$Cgroup <- factor( DF2$C, levels = Cvals )
+head( DF2 )
+```
+
+---
+
+# Use `ggplot2` Color
+
+Ggplot will separate the data into groups of records where the `Cgroup` column values are all the same. Note that because `C` is numeric, `ggplot` would assume there could be values like 3.7 even though we purposely skipped over that value. 
+
+```{r,fig.height=3}
+library(ggplot2)
+ggplot( DF2, aes( x = B, y = ans, colour = Cgroup ) ) +
+  geom_line( size = 1 ) +
+  scale_color_viridis_d( name = "C" ) +
+  theme_minimal()
+```
+
+---
+
+# Output
+
+Sometimes others don't want a "long"-form data frame... the `spread` function is useful for "pivoting" your calculations to a more human-digestible layout:
+
+```{r}
+library(tidyr)
+options( digits = 3 )
+DF3 <- (   DF2
+       %>% select( A, B, C = Cgroup, ans )
+       %>% spread( C, ans )
+       )
+head( DF3 )
+```
+
+The factor version of `C` is discrete, which makes it easier to know which `ans` values will end up in each column.
+
+---
+
+# Conclusion
+
+- For loops are not always bad
+    + Most useful for repeating `solution`s that involve a lot of calculations anyway
+    + `apply`-type functions are just wrappers for `for` loops with results pre-allocation
+- Vectorized code uses all vector-based primitive operations
+    + `apply`-type code _looks_ vectorized so easy to read, but not fast
+    + See `?Arithmetic`, and `?cumsum`, and `?rowSums` for example
+- Grouping rows by discrete values helps you sort out your results
+    + Numeric values are not discrete, but you can fake it by making a factor
